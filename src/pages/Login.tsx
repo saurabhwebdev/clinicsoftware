@@ -19,7 +19,7 @@ const Login: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-white">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
       </div>
     );
@@ -30,40 +30,39 @@ const Login: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-white p-4">
-      <div className="max-w-md w-full">
-        <Card className="shadow-xl border-none">
-          <CardHeader className="space-y-1 text-center">
-            <div className="flex justify-center mb-2">
-              <img src="/logo.svg" alt="ClinicFlow Logo" className="h-12 w-auto" />
-            </div>
-            <CardTitle className="text-2xl">Welcome to ClinicFlow</CardTitle>
-            <CardDescription>
-              Sign in to access your clinic dashboard
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button 
-              variant="outline" 
-              className="w-full space-x-2 flex items-center justify-center" 
-              onClick={signInWithGoogle}
-            >
-              <svg className="h-4 w-4 mr-2" viewBox="0 0 48 48">
-                <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
-                  <path fill="#4285F4" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z"/>
-                  <path fill="#34A853" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z"/>
-                  <path fill="#FBBC05" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z"/>
-                  <path fill="#EA4335" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 42.369 C -8.804 40.429 -11.514 39.239 -14.754 39.239 C -19.444 39.239 -23.494 41.939 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z"/>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-white">
+      <Card className="w-full max-w-md mx-auto shadow-xl border-none bg-white/95 backdrop-blur-sm">
+        <CardHeader className="space-y-2 text-center pb-6">
+          <CardTitle className="text-2xl font-bold">Sign in to your account</CardTitle>
+          <CardDescription className="text-base">
+            Access your clinic dashboard to manage patients and appointments
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6 pt-2">
+          <Button 
+            variant="outline" 
+            className="w-full h-12 relative group overflow-hidden border-2 hover:border-blue-500 transition-all duration-300" 
+            onClick={signInWithGoogle}
+          >
+            <div className="absolute left-0 top-0 bottom-0 w-14 bg-white flex items-center justify-center border-r group-hover:border-blue-500 transition-all duration-300">
+              <svg className="h-6 w-6" viewBox="0 0 48 48">
+                <g>
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                 </g>
               </svg>
-              <span>Sign in with Google</span>
-            </Button>
-          </CardContent>
-          <CardFooter className="text-center text-sm text-muted-foreground">
+            </div>
+            <span className="text-base font-medium ml-6">Continue with Google</span>
+          </Button>
+        </CardContent>
+        <CardFooter className="text-center text-sm text-muted-foreground pt-2 pb-6">
+          <p>
             By signing in, you agree to our <TermsOfService /> and <PrivacyPolicy />
-          </CardFooter>
-        </Card>
-      </div>
+          </p>
+        </CardFooter>
+      </Card>
     </div>
   );
 };
