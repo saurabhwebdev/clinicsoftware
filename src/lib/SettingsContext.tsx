@@ -49,6 +49,9 @@ export interface EmailSettings {
   username: string;
   fromName: string;
   fromEmail: string;
+  googleClientId?: string;
+  googleApiKey?: string;
+  googleApiScopes?: string;
 }
 
 export interface Settings {
@@ -102,7 +105,10 @@ const defaultSettings: Settings = {
     service: 'gmail',
     username: '',
     fromName: 'ClinicFlow Center',
-    fromEmail: 'notifications@clinicflow.com'
+    fromEmail: 'notifications@clinicflow.com',
+    googleClientId: '',
+    googleApiKey: '',
+    googleApiScopes: 'https://www.googleapis.com/auth/gmail.send'
   }
 };
 
