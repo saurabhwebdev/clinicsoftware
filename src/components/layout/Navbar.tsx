@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, Search, Menu, User, LogOut } from 'lucide-react';
+import { Bell, Search, User, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/AuthContext';
@@ -15,7 +15,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 interface NavbarProps {
-  onMenuClick: () => void;
+  onMenuClick?: () => void;
 }
 
 const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
@@ -41,13 +41,8 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
   return (
     <header className="h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex items-center justify-between h-full px-4">
-        <div className="flex items-center">
-          <Button variant="ghost" size="icon" onClick={onMenuClick} className="mr-2">
-            <Menu className="h-5 w-5" />
-            <span className="sr-only">Toggle menu</span>
-          </Button>
-          
-          <div className="hidden md:flex items-center ml-2 relative">
+        <div className="flex items-center">          
+          <div className="relative">
             <Search className="h-4 w-4 absolute left-2.5 text-muted-foreground" />
             <Input 
               type="search" 
