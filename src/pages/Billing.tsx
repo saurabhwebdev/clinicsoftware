@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -33,7 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { FileText, PlusCircle, Search, Eye, FileEdit, MoreVertical, Trash, Download, CheckCircle2 } from 'lucide-react';
+import { FileText, PlusCircle, Search, Eye, FileEdit, MoreVertical, Trash, Download, CheckCircle2, Mail } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/components/ui/use-toast';
 import { useBilling, Bill } from '@/lib/BillingContext';
@@ -42,6 +42,29 @@ import NewBillModal from '@/components/billing/NewBillModal';
 import BillDetail from '@/components/billing/BillDetail';
 import { generateBillPDF } from '@/lib/utils/pdf';
 import { useSettings } from '@/lib/SettingsContext';
+import { sendBillEmail } from '@/lib/services/emailService';
+import { usePatients } from '@/lib/PatientContext';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogDescription, 
+  DialogFooter, 
+  DialogHeader, 
+  DialogTitle 
+} from '@/components/ui/dialog';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+
+// Email form validation schema
+const emailFormSchema = z.object({
+  recipientEmail: z.string().email('Please enter a valid email address'),
+  additionalEmails: z.string().optional()
+});
+
+// Form submission type
+type EmailFormValues = z.infer<typeof emailFormSchema>;
 
 const BillingContent = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,9 +73,48 @@ const BillingContent = () => {
   const [isViewingBill, setIsViewingBill] = useState(false);
   const [billToDelete, setBillToDelete] = useState<string | null>(null);
   const [statusUpdating, setStatusUpdating] = useState<string | null>(null);
+  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
+  const [billToEmail, setBillToEmail] = useState<Bill | null>(null);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const { bills, loading, removeBill, updateBillData } = useBilling();
+  const { patients } = usePatients();
   const { toast } = useToast();
   const { settings } = useSettings();
+
+  // Form for email recipient
+  const emailForm = useForm<EmailFormValues>({
+    resolver: zodResolver(emailFormSchema),
+    defaultValues: {
+      recipientEmail: '',
+      additionalEmails: ''
+    }
+  });
+
+  // Reset form with patient email when bill to email changes
+  useEffect(() => {
+    if (billToEmail) {
+      // Try to find patient email from patientId
+      const patientEmail = getPatientEmail(billToEmail.patientId);
+      emailForm.reset({
+        recipientEmail: patientEmail || '', 
+        additionalEmails: ''
+      });
+    }
+  }, [billToEmail, emailForm, patients]);
+
+  // Function to get patient email from patient collection
+  const getPatientEmail = (patientId: string): string => {
+    // Find the patient with the matching ID in the patients array
+    const patient = patients.find(p => p.id === patientId);
+    
+    // If the patient is found, return their email
+    if (patient && patient.email) {
+      return patient.email;
+    }
+    
+    // If patient not found or no email, return empty string
+    return '';
+  };
 
   // Filter bills by search query
   const filteredBills = bills.filter(bill => 
@@ -116,6 +178,87 @@ const BillingContent = () => {
         description: "Failed to generate PDF",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleEmailBill = (bill: Bill) => {
+    // First check if email is configured
+    if (!settings.email.enabled || !settings.email.username || !settings.email.googleClientId) {
+      toast({
+        title: "Email Not Configured",
+        description: "Please configure your email settings first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setBillToEmail(bill);
+    setIsEmailDialogOpen(true);
+  };
+
+  const onSendEmail = async (data: EmailFormValues) => {
+    if (!billToEmail) return;
+    
+    setIsSendingEmail(true);
+    
+    try {
+      // Get the auth token from localStorage
+      const storedToken = localStorage.getItem('googleAuthToken');
+      if (!storedToken) {
+        throw new Error('You need to authorize with Google in the Email Settings section first');
+      }
+      
+      const parsedToken = JSON.parse(storedToken);
+      
+      // Check if token is expired
+      if (parsedToken.expiresAt <= Date.now()) {
+        throw new Error('Your Google authorization has expired. Please reauthorize in Email Settings');
+      }
+      
+      // Process additional emails
+      const emails = [data.recipientEmail];
+      
+      if (data.additionalEmails) {
+        // Split by comma and trim whitespace
+        const additionalEmailsList = data.additionalEmails
+          .split(',')
+          .map(email => email.trim())
+          .filter(email => email && email.includes('@')); // Basic validation
+          
+        emails.push(...additionalEmailsList);
+      }
+      
+      // Send to each recipient
+      const emailPromises = emails.map(email => 
+        sendBillEmail({
+          settings: settings.email,
+          bill: billToEmail,
+          recipientEmail: email,
+          authToken: parsedToken.token,
+          clinicInfo: settings.clinic
+        })
+      );
+      
+      await Promise.all(emailPromises);
+      
+      toast({
+        title: "Success",
+        description: `Invoice sent to ${emails.length > 1 ? 'multiple recipients' : data.recipientEmail}`,
+      });
+      
+      // Close the dialog and reset form
+      setIsEmailDialogOpen(false);
+      emailForm.reset();
+      setBillToEmail(null);
+    } catch (error) {
+      console.error('Error sending bill email:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to send invoice email",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingEmail(false);
     }
   };
 
@@ -205,7 +348,7 @@ const BillingContent = () => {
             <h3 className="mt-4 text-lg font-semibold">No Bills</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               {bills.length === 0 
-                ? "You haven't added any bills yet."
+                ? "You haven't created any bills yet."
                 : "No bills match your search criteria."}
             </p>
             {bills.length === 0 && (
@@ -220,10 +363,10 @@ const BillingContent = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Invoice #</TableHead>
-                  <TableHead>Patient Name</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Amount</TableHead>
+                  <TableHead>Invoice #</TableHead>
+                  <TableHead>Patient</TableHead>
+                  <TableHead>Total</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -231,18 +374,11 @@ const BillingContent = () => {
               <TableBody>
                 {filteredBills.map((bill) => (
                   <TableRow key={bill.id}>
-                    <TableCell>{bill.invoiceNumber}</TableCell>
-                    <TableCell className="font-medium">{bill.patientName}</TableCell>
                     <TableCell>{format(new Date(bill.date), 'MMM d, yyyy')}</TableCell>
-                    <TableCell className="font-semibold">{formatCurrency(bill.total)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {getStatusBadge(bill.status)}
-                        {statusUpdating === bill.id && (
-                          <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full ml-2"></div>
-                        )}
-                      </div>
-                    </TableCell>
+                    <TableCell className="font-medium">{bill.invoiceNumber}</TableCell>
+                    <TableCell>{bill.patientName}</TableCell>
+                    <TableCell>{formatCurrency(bill.total)}</TableCell>
+                    <TableCell>{getStatusBadge(bill.status)}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -292,6 +428,12 @@ const BillingContent = () => {
                             <Download className="h-4 w-4 mr-2" />
                             Export as PDF
                           </DropdownMenuItem>
+
+                          <DropdownMenuItem onClick={() => handleEmailBill(bill)}>
+                            <Mail className="h-4 w-4 mr-2" />
+                            Send as Email
+                          </DropdownMenuItem>
+                          
                           <DropdownMenuItem 
                             className="text-destructive focus:text-destructive" 
                             onClick={() => setBillToDelete(bill.id || '')}
@@ -348,18 +490,82 @@ const BillingContent = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Email Bill Dialog */}
+      <Dialog open={isEmailDialogOpen} onOpenChange={(open) => {
+        setIsEmailDialogOpen(open);
+        if (!open) {
+          setBillToEmail(null);
+          emailForm.reset();
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Invoice via Email</DialogTitle>
+            <DialogDescription>
+              The patient's email is pre-filled. You can modify it or add additional recipients.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...emailForm}>
+            <form onSubmit={emailForm.handleSubmit(onSendEmail)} className="space-y-4">
+              <FormField
+                control={emailForm.control}
+                name="recipientEmail"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Patient Email</FormLabel>
+                    <FormControl>
+                      <Input placeholder="patient@example.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={emailForm.control}
+                name="additionalEmails"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Additional Recipients (comma-separated)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="email1@example.com, email2@example.com" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Add any additional email addresses separated by commas
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setIsEmailDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSendingEmail}>
+                  {isSendingEmail ? "Sending..." : "Send Invoice"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
-const Billing = () => {
+const BillingPage = () => {
   return (
-    <BillingProvider>
-      <MainLayout>
-        <BillingContent />
-      </MainLayout>
-    </BillingProvider>
+    <MainLayout>
+      <div className="container mx-auto py-6">
+        <BillingProvider>
+          <BillingContent />
+        </BillingProvider>
+      </div>
+    </MainLayout>
   );
 };
 
-export default Billing; 
+export default BillingPage; 

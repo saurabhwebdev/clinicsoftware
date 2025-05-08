@@ -1,5 +1,6 @@
 import { EmailSettings } from '@/lib/SettingsContext';
 import { Prescription } from '@/lib/PrescriptionContext';
+import { Bill } from '@/lib/BillingContext';
 
 // Interface for sending test email
 interface SendTestEmailParams {
@@ -23,6 +24,20 @@ interface SendPrescriptionEmailParams {
   doctorInfo: {
     name: string;
     specialization: string;
+  };
+}
+
+// Interface for sending bill email
+interface SendBillEmailParams {
+  settings: EmailSettings;
+  bill: Bill;
+  recipientEmail: string;
+  authToken: string;
+  clinicInfo: {
+    name: string;
+    address: string;
+    phone: string;
+    email: string;
   };
 }
 
@@ -380,6 +395,189 @@ export const sendPrescriptionEmail = async ({
     return true;
   } catch (error) {
     console.error('Error sending prescription email with Gmail API:', error);
+    throw error;
+  }
+};
+
+/**
+ * Creates a bill/invoice email template
+ */
+export const createBillEmailTemplate = (
+  recipientEmail: string,
+  bill: Bill,
+  settings: EmailSettings,
+  clinicInfo: { name: string; address: string; phone: string; email: string }
+): EmailTemplate => {
+  // Format date properly
+  const formatDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: 'USD'  // Could be dynamic based on settings
+    }).format(amount);
+  };
+
+  return {
+    subject: `Invoice #${bill.invoiceNumber} for ${bill.patientName} - ${clinicInfo.name}`,
+    body: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 5px;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h1 style="color: #4A6FA5; margin-bottom: 10px;">${clinicInfo.name}</h1>
+          <p style="color: #666;">${clinicInfo.address}</p>
+          <p style="color: #666;">${clinicInfo.phone} | ${clinicInfo.email}</p>
+        </div>
+        
+        <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+          <h2 style="margin-top: 0; color: #333;">Invoice #${bill.invoiceNumber}</h2>
+          <p><strong>Date:</strong> ${formatDate(bill.date)}</p>
+          <p><strong>Patient:</strong> ${bill.patientName}</p>
+          <p><strong>Status:</strong> <span style="color: ${
+            bill.status === 'paid' ? '#4CAF50' : 
+            bill.status === 'pending' ? '#FF9800' : '#F44336'
+          };">${bill.status.toUpperCase()}</span></p>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <h3 style="color: #333;">Invoice Items:</h3>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <thead>
+              <tr style="background-color: #f1f5f9;">
+                <th style="padding: 8px; text-align: left; border-bottom: 1px solid #e2e8f0;">Description</th>
+                <th style="padding: 8px; text-align: right; border-bottom: 1px solid #e2e8f0;">Quantity</th>
+                <th style="padding: 8px; text-align: right; border-bottom: 1px solid #e2e8f0;">Unit Price</th>
+                <th style="padding: 8px; text-align: right; border-bottom: 1px solid #e2e8f0;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${bill.items.map((item, index) => `
+                <tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f9fafb'};">
+                  <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${item.description}</td>
+                  <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${item.quantity}</td>
+                  <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${formatCurrency(item.unitPrice)}</td>
+                  <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${formatCurrency(item.amount)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        
+        <div style="border-top: 1px solid #e2e8f0; padding-top: 15px; margin-left: auto; width: 200px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <strong>Subtotal:</strong>
+            <span>${formatCurrency(bill.subtotal)}</span>
+          </div>
+          
+          ${bill.tax ? `
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <strong>Tax:</strong>
+            <span>${formatCurrency(bill.tax)}</span>
+          </div>
+          ` : ''}
+          
+          ${bill.discount ? `
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <strong>Discount:</strong>
+            <span>-${formatCurrency(bill.discount)}</span>
+          </div>
+          ` : ''}
+          
+          <div style="display: flex; justify-content: space-between; border-top: 1px solid #e2e8f0; padding-top: 8px; margin-top: 8px;">
+            <strong>Total:</strong>
+            <span style="font-weight: bold;">${formatCurrency(bill.total)}</span>
+          </div>
+        </div>
+        
+        ${bill.notes ? `
+        <div style="margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px;">
+          <h3 style="color: #333; margin-top: 0;">Notes:</h3>
+          <p style="color: #555;">${bill.notes.replace(/\n/g, '<br>')}</p>
+        </div>
+        ` : ''}
+        
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eaeaea; text-align: center; color: #999; font-size: 12px;">
+          <p>This is an electronic invoice sent from ${clinicInfo.name}.</p>
+          <p>A PDF version of this invoice is attached to this email for your records.</p>
+          <p>Thank you for your business!</p>
+        </div>
+      </div>
+    `,
+    to: [recipientEmail]
+  };
+};
+
+/**
+ * Sends a bill/invoice as an email using the Gmail API
+ */
+export const sendBillEmail = async ({
+  settings,
+  bill,
+  recipientEmail,
+  authToken,
+  clinicInfo
+}: SendBillEmailParams): Promise<boolean> => {
+  // Validate required settings
+  if (!settings.enabled || !settings.username) {
+    throw new Error('Email settings are not properly configured');
+  }
+  
+  // Check if we have an auth token
+  if (!authToken) {
+    throw new Error('Unauthorized: No authentication token provided');
+  }
+
+  try {
+    console.log('Sending bill email with Gmail API...');
+    
+    // Create a bill email template
+    const emailTemplate = createBillEmailTemplate(
+      recipientEmail,
+      bill,
+      settings,
+      clinicInfo
+    );
+    
+    // Convert template to RFC 5322 format
+    const emailContent = createRFC5322Email({
+      from: `${settings.fromName} <${settings.fromEmail}>`,
+      to: recipientEmail,
+      subject: emailTemplate.subject,
+      body: emailTemplate.body
+    });
+    
+    // Base64 encode the email for Gmail API
+    const base64EncodedEmail = safeBase64Encode(emailContent);
+    
+    // Call Gmail API to send the email
+    const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        raw: base64EncodedEmail
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Gmail API error:', errorText);
+      throw new Error(`Failed to send bill email: ${response.statusText}`);
+    }
+    
+    console.log('Bill email sent successfully through Gmail API');
+    return true;
+  } catch (error) {
+    console.error('Error sending bill email with Gmail API:', error);
     throw error;
   }
 }; 
