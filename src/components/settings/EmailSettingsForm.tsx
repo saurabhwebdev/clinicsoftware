@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -79,6 +79,12 @@ const testEmailSchema = z.object({
   recipientEmail: z.string().email('Please enter a valid email address')
 });
 
+// Interface for storing Google auth token
+interface GoogleAuthToken {
+  token: string;
+  expiresAt: number; // Timestamp when token expires
+}
+
 const EmailSettingsForm = () => {
   const { settings, updateEmailSettings } = useSettings();
   const { toast } = useToast();
@@ -86,6 +92,7 @@ const EmailSettingsForm = () => {
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testDialogOpen, setTestDialogOpen] = useState(false);
   const [isGoogleAuthorized, setIsGoogleAuthorized] = useState(false);
+  const [googleAuthToken, setGoogleAuthToken] = useState<GoogleAuthToken | null>(null);
   
   // Initialize with default values including Google API credentials
   const defaultValues: ExtendedEmailSettings = {
@@ -110,10 +117,46 @@ const EmailSettingsForm = () => {
   const watchEnabled = form.watch('enabled');
   const watchClientId = form.watch('googleClientId');
   
+  // On component mount, check if we have a stored auth token
+  useEffect(() => {
+    const storedToken = localStorage.getItem('googleAuthToken');
+    if (storedToken) {
+      try {
+        const parsedToken: GoogleAuthToken = JSON.parse(storedToken);
+        
+        // Check if token is still valid (not expired)
+        if (parsedToken.expiresAt > Date.now()) {
+          setGoogleAuthToken(parsedToken);
+          setIsGoogleAuthorized(true);
+          console.log('Restored Google auth token from storage');
+        } else {
+          // Token expired, remove from storage
+          localStorage.removeItem('googleAuthToken');
+          console.log('Stored Google token expired');
+        }
+      } catch (e) {
+        console.error('Error parsing stored Google auth token:', e);
+        localStorage.removeItem('googleAuthToken');
+      }
+    }
+  }, []);
+  
   // Google login handler - no longer using client ID here since we're using a custom implementation
   const googleLogin = useGoogleLogin({
     onSuccess: (tokenResponse) => {
       console.log('Google auth success:', tokenResponse);
+      
+      // Store the token with expiration time (default to 1 hour if not provided)
+      const expiresIn = tokenResponse.expires_in || 3600;
+      const authToken: GoogleAuthToken = {
+        token: tokenResponse.access_token,
+        expiresAt: Date.now() + (expiresIn * 1000) // Convert seconds to milliseconds
+      };
+      
+      // Save to state and localStorage
+      setGoogleAuthToken(authToken);
+      localStorage.setItem('googleAuthToken', JSON.stringify(authToken));
+      
       toast({
         title: 'Google Authentication Successful',
         description: 'You can now send emails through the Gmail API',
@@ -154,6 +197,16 @@ const EmailSettingsForm = () => {
   };
 
   const handleGoogleLogin = () => {
+    // If already authorized with a valid token, no need to re-authorize
+    if (isGoogleAuthorized && googleAuthToken && googleAuthToken.expiresAt > Date.now()) {
+      toast({
+        title: 'Already Authorized',
+        description: 'You are already authorized with Google',
+        variant: 'default'
+      });
+      return;
+    }
+    
     // Make sure client ID is set
     if (!watchClientId) {
       toast({
@@ -170,12 +223,29 @@ const EmailSettingsForm = () => {
       callback: (response: any) => {
         if (response.access_token) {
           console.log('Google auth success:', response);
+          
+          // Store the token with expiration time
+          const expiresIn = response.expires_in || 3600;
+          const authToken: GoogleAuthToken = {
+            token: response.access_token,
+            expiresAt: Date.now() + (expiresIn * 1000) // Convert seconds to milliseconds
+          };
+          
+          // Save to state and localStorage
+          setGoogleAuthToken(authToken);
+          localStorage.setItem('googleAuthToken', JSON.stringify(authToken));
+          
           toast({
             title: 'Google Authentication Successful',
             description: 'You can now send emails through the Gmail API',
             variant: 'default'
           });
           setIsGoogleAuthorized(true);
+          
+          // If test dialog is open, automatically trigger email send
+          if (testDialogOpen && testEmailForm.getValues().recipientEmail) {
+            sendTestEmail(testEmailForm.getValues());
+          }
         } else {
           console.error('Google auth error:', response);
           toast({
@@ -198,7 +268,7 @@ const EmailSettingsForm = () => {
   };
 
   const sendTestEmail = async (data: { recipientEmail: string }) => {
-    if (!settings.email.enabled) {
+    if (!watchEnabled) {
       toast({
         title: 'Error',
         description: 'Please enable email notifications first',
@@ -207,7 +277,8 @@ const EmailSettingsForm = () => {
       return;
     }
 
-    if (!settings.email.username) {
+    const username = form.getValues('username');
+    if (!username) {
       toast({
         title: 'Error',
         description: 'Please configure your email address first',
@@ -226,12 +297,12 @@ const EmailSettingsForm = () => {
       return;
     }
 
-    // If not authorized yet with Google
-    if (!isGoogleAuthorized) {
+    // If not authorized yet with Google or token expired, trigger authorization
+    if (!isGoogleAuthorized || !googleAuthToken || googleAuthToken.expiresAt <= Date.now()) {
       toast({
         title: 'Google Authentication Required',
         description: 'Please authorize with Google before sending emails',
-        variant: 'destructive'
+        variant: 'default'
       });
       handleGoogleLogin(); // Start the Google login flow
       return;
@@ -239,31 +310,61 @@ const EmailSettingsForm = () => {
 
     setIsSendingTest(true);
     try {
-      // Use the email service to send the test email
+      // Get the current form values to ensure we're using the latest settings
+      const currentSettings = form.getValues();
+      
+      // Use the email service to send the test email, passing the auth token
       await sendTestEmailService({
-        settings: form.getValues(),
-        recipientEmail: data.recipientEmail
+        settings: currentSettings,
+        recipientEmail: data.recipientEmail,
+        authToken: googleAuthToken.token
       });
       
       // Create a test email template
-      const emailTemplate = createTestEmailTemplate(data.recipientEmail, form.getValues());
+      const emailTemplate = createTestEmailTemplate(data.recipientEmail, currentSettings);
       
       toast({
-        title: 'Simulated Email Sent',
-        description: `This is a simulation. No real email was sent to ${data.recipientEmail}`,
+        title: 'Email Sent Successfully',
+        description: `Your test email has been sent to ${data.recipientEmail}`,
         variant: 'default'
       });
       setTestDialogOpen(false);
       testEmailForm.reset();
     } catch (error) {
+      console.error('Error sending test email:', error);
       toast({
         title: 'Error',
-        description: 'Failed to send test email. Please check your email configuration.',
+        description: 'Failed to send test email. Please check your email configuration and Google authorization.',
         variant: 'destructive'
       });
+      
+      // If the error might be due to an expired token, prompt for reauthorization
+      if (error === 'Unauthorized' || (error instanceof Error && error.message.includes('auth'))) {
+        setIsGoogleAuthorized(false);
+        localStorage.removeItem('googleAuthToken');
+        setGoogleAuthToken(null);
+        
+        toast({
+          title: 'Authorization Expired',
+          description: 'Your Google authorization has expired. Please authorize again.',
+          variant: 'default'
+        });
+      }
     } finally {
       setIsSendingTest(false);
     }
+  };
+  
+  // Get readable expiration time for display
+  const getTokenExpirationTime = () => {
+    if (!googleAuthToken) return 'Not authorized';
+    
+    const expiresIn = Math.max(0, Math.floor((googleAuthToken.expiresAt - Date.now()) / 1000 / 60)); // minutes
+    if (expiresIn < 1) return 'Expired';
+    if (expiresIn < 60) return `Expires in ${expiresIn} minute${expiresIn !== 1 ? 's' : ''}`;
+    
+    const hours = Math.floor(expiresIn / 60);
+    return `Expires in ${hours} hour${hours !== 1 ? 's' : ''}`;
   };
   
   return (
@@ -462,20 +563,65 @@ const EmailSettingsForm = () => {
                   How to set up Google API credentials
                 </AccordionTrigger>
                 <AccordionContent className="space-y-2 text-sm text-muted-foreground">
-                  <p className="mb-2">Follow these steps to set up your Google API credentials:</p>
-                  <ol className="list-decimal pl-5 space-y-2">
-                    <li>Go to the <a href="https://console.cloud.google.com/" className="underline text-blue-600" target="_blank" rel="noopener noreferrer">Google Cloud Console <ExternalLink className="h-3 w-3 inline" /></a></li>
-                    <li>Create a new project or select an existing one</li>
-                    <li>In the sidebar, navigate to &quot;APIs &amp; Services&quot; &raquo; &quot;Library&quot;</li>
-                    <li>Search for "Gmail API" and enable it</li>
-                    <li>Go to &quot;APIs &amp; Services&quot; &raquo; &quot;Credentials&quot;</li>
-                    <li>Click "Create Credentials" and select "OAuth client ID"</li>
-                    <li>Set the application type to "Web application"</li>
-                    <li>Add your domain to "Authorized JavaScript origins"</li>
-                    <li>Click "Create" and copy the Client ID</li>
-                    <li>Create an API Key by clicking "Create Credentials" &raquo; "API Key"</li>
-                    <li>Copy the API Key and paste it above</li>
+                  <p className="mb-2">Follow these step-by-step instructions to set up your Google API credentials:</p>
+                  <ol className="list-decimal pl-5 space-y-3">
+                    <li>Go to the <a href="https://console.cloud.google.com/" className="underline text-blue-600" target="_blank" rel="noopener noreferrer">Google Cloud Console <ExternalLink className="h-3 w-3 inline" /></a> and sign in with your Google account</li>
+                    <li>Click on the project dropdown near the top of the page, then click "New Project"</li>
+                    <li>Enter a name for your project (e.g., "ClinicFlow"), then click "Create"</li>
+                    <li>Once the project is created, make sure it's selected in the dropdown at the top</li>
+                    <li>In the left sidebar, click "APIs & Services" &raquo; "Library"</li>
+                    <li>In the search bar, type "Gmail API" and click on it when it appears</li>
+                    <li>Click the "Enable" button to activate the Gmail API for your project</li>
+                    <li>After enabling, you'll be taken to the API overview page. Click "Create Credentials" to set up your credentials</li>
+                    <li><strong>Configure OAuth Consent Screen:</strong>
+                      <ul className="list-disc pl-5 mt-2 space-y-1">
+                        <li>On the "Create credentials" page, click "Configure Consent Screen"</li>
+                        <li>Select "External" as the user type (unless you have Google Workspace), then click "Create"</li>
+                        <li>Fill in the required app information:
+                          <ul className="list-circle pl-5 mt-1 space-y-1">
+                            <li>App name: "ClinicFlow" (or your clinic's name)</li>
+                            <li>User support email: Your email address</li>
+                            <li>Developer contact information: Your email address</li>
+                          </ul>
+                        </li>
+                        <li>Click "Save and Continue"</li>
+                        <li>On the "Scopes" page, click "Add or Remove Scopes" and add: <code>https://www.googleapis.com/auth/gmail.send</code></li>
+                        <li>Click "Save and Continue"</li>
+                        <li>On the "Test users" page, click "Add Users" and enter your own email address</li>
+                        <li>Click "Save and Continue", then "Back to Dashboard"</li>
+                      </ul>
+                    </li>
+                    <li><strong>Create OAuth Client ID:</strong>
+                      <ul className="list-disc pl-5 mt-2 space-y-1">
+                        <li>In the left sidebar, click "APIs & Services" &raquo; "Credentials"</li>
+                        <li>Click "Create Credentials" and select "OAuth client ID"</li>
+                        <li>For "Application type", select "Web application"</li>
+                        <li>Name: "ClinicFlow Web Client" (or any name you prefer)</li>
+                        <li>Under "Authorized JavaScript origins", click "Add URI" and enter your website URL (during development, use <code>http://localhost:3000</code>)</li>
+                        <li>Click "Create"</li>
+                        <li>A popup will appear with your Client ID - copy this value and paste it in the "Google OAuth Client ID" field above</li>
+                      </ul>
+                    </li>
+                    <li><strong>Create API Key:</strong>
+                      <ul className="list-disc pl-5 mt-2 space-y-1">
+                        <li>In the left sidebar, ensure you're in "APIs & Services" &raquo; "Credentials"</li>
+                        <li>Click "Create Credentials" and select "API Key"</li>
+                        <li>Copy the generated API Key and paste it in the "Google API Key" field above</li>
+                        <li>For better security, click "Restrict Key" and limit it to the Gmail API</li>
+                      </ul>
+                    </li>
+                    <li>Return to this page and enter the Client ID and API Key in the fields above</li>
+                    <li>Click "Authorize with Google" to connect your Google account</li>
+                    <li>Follow the Google authorization prompts to grant permission to your app</li>
                   </ol>
+                  <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                    <p className="font-medium text-amber-800">Important Notes:</p>
+                    <ul className="list-disc pl-5 mt-1 space-y-1 text-amber-700">
+                      <li>Your app will initially be in "Testing" mode, which is sufficient for personal use</li>
+                      <li>If you see warnings about "unverified app", this is normal during testing</li>
+                      <li>For production use, you would need to submit your app for verification by Google</li>
+                    </ul>
+                  </div>
                 </AccordionContent>
               </AccordionItem>
             </Accordion>
@@ -493,6 +639,7 @@ const EmailSettingsForm = () => {
                   <>
                     <Check className="mr-2 h-4 w-4" />
                     Authorized with Google
+                    <span className="ml-2 text-xs text-muted-foreground">({getTokenExpirationTime()})</span>
                   </>
                 ) : (
                   <>
@@ -501,6 +648,12 @@ const EmailSettingsForm = () => {
                   </>
                 )}
               </Button>
+              
+              {isGoogleAuthorized && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Your authorization will be remembered until it expires. You won't need to re-authorize for each email.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -520,6 +673,17 @@ const EmailSettingsForm = () => {
                   Send a test email to verify your configuration
                 </DialogDescription>
               </DialogHeader>
+              
+              {!isGoogleAuthorized && (
+                <Alert className="mb-4 bg-blue-50 border-blue-200">
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-800">Authorization Required</AlertTitle>
+                  <AlertDescription className="text-blue-700">
+                    You'll need to authorize with Google before sending a test email.
+                  </AlertDescription>
+                </Alert>
+              )}
+              
               <Form {...testEmailForm}>
                 <form onSubmit={testEmailForm.handleSubmit(sendTestEmail)} className="space-y-4">
                   <FormField
@@ -535,8 +699,23 @@ const EmailSettingsForm = () => {
                       </FormItem>
                     )}
                   />
-                  <DialogFooter>
-                    <Button type="submit" disabled={isSendingTest}>
+                  <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
+                    {!isGoogleAuthorized && (
+                      <Button 
+                        type="button" 
+                        variant="secondary" 
+                        className="w-full sm:w-auto"
+                        onClick={handleGoogleLogin}
+                      >
+                        <Lock className="mr-2 h-4 w-4" />
+                        Authorize with Google
+                      </Button>
+                    )}
+                    <Button 
+                      type="submit" 
+                      disabled={isSendingTest}
+                      className="w-full sm:w-auto"
+                    >
                       {isSendingTest ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />

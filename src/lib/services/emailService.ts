@@ -4,29 +4,80 @@ import { EmailSettings } from '@/lib/SettingsContext';
 interface SendTestEmailParams {
   settings: EmailSettings;
   recipientEmail: string;
+  authToken?: string; // OAuth token from Google authorization
 }
 
 /**
  * Sends a test email using the Gmail API
  * This requires the user to authorize the application with their Google account
  */
-export const sendTestEmail = async ({ settings, recipientEmail }: SendTestEmailParams): Promise<boolean> => {
+export const sendTestEmail = async ({ settings, recipientEmail, authToken }: SendTestEmailParams): Promise<boolean> => {
   // Validate required settings
   if (!settings.enabled || !settings.username) {
     throw new Error('Email settings are not properly configured');
   }
+  
+  // Check if we have an auth token
+  if (!authToken) {
+    throw new Error('Unauthorized: No authentication token provided');
+  }
 
-  // For now, we'll keep this as a simulation
-  // In the next step, we'll implement the actual Gmail API integration
-  // once the user provides the Google API credentials
-  
-  // For demo purposes, we'll simulate a successful email send after a delay
-  await new Promise(resolve => setTimeout(resolve, 1500));
-  
-  // This is just a placeholder - in a real implementation, 
-  // this would use Gmail API to send an actual email
-  return true;
+  try {
+    console.log('Sending real email with Gmail API...');
+    
+    // Create an email template
+    const emailTemplate = createTestEmailTemplate(recipientEmail, settings);
+    
+    // Convert template to RFC 5322 format
+    const emailContent = createRFC5322Email({
+      from: `${settings.fromName} <${settings.fromEmail}>`,
+      to: recipientEmail,
+      subject: emailTemplate.subject,
+      body: emailTemplate.body
+    });
+    
+    // Base64 encode the email for Gmail API
+    const base64EncodedEmail = btoa(unescape(encodeURIComponent(emailContent)))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+    
+    // Call Gmail API to send the email
+    const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        raw: base64EncodedEmail
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Gmail API error:', errorText);
+      throw new Error(`Failed to send email: ${response.statusText}`);
+    }
+    
+    console.log('Email sent successfully through Gmail API');
+    return true;
+  } catch (error) {
+    console.error('Error sending email with Gmail API:', error);
+    throw error;
+  }
 };
+
+// Utility to create RFC 5322 formatted email
+function createRFC5322Email({ from, to, subject, body }: { from: string, to: string, subject: string, body: string }): string {
+  const mime = 'MIME-Version: 1.0\r\n';
+  const contentType = 'Content-Type: text/html; charset=utf-8\r\n';
+  const fromHeader = `From: ${from}\r\n`;
+  const toHeader = `To: ${to}\r\n`;
+  const subjectHeader = `Subject: ${subject}\r\n\r\n`;
+  
+  return mime + contentType + fromHeader + toHeader + subjectHeader + body;
+}
 
 // Structure of a typical email
 export interface EmailTemplate {
@@ -54,13 +105,14 @@ export const createTestEmailTemplate = (recipientEmail: string, settings: EmailS
     body: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 5px;">
         <div style="text-align: center; margin-bottom: 20px;">
-          <h1 style="color: #0070f3; margin-bottom: 10px;">ClinicFlow</h1>
+          <h1 style="color: #4A6FA5; margin-bottom: 10px;">ClinicFlow</h1>
           <p style="color: #666;">Your Clinic Management Solution</p>
         </div>
         
         <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
           <h2 style="margin-top: 0; color: #333;">Email Configuration Test</h2>
           <p>This is a test email from ClinicFlow to confirm your email settings are working correctly.</p>
+          <p><strong>This is a real email sent through Gmail API.</strong></p>
         </div>
         
         <div style="margin-bottom: 20px;">
@@ -72,7 +124,7 @@ export const createTestEmailTemplate = (recipientEmail: string, settings: EmailS
           </ul>
         </div>
         
-        <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; border-left: 4px solid #0070f3;">
+        <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; border-left: 4px solid #4A6FA5;">
           <p style="margin: 0; color: #333;">If you received this email, your email configuration is working correctly!</p>
         </div>
         
@@ -85,7 +137,64 @@ export const createTestEmailTemplate = (recipientEmail: string, settings: EmailS
   };
 };
 
-// Gmail API implementation (will be implemented when user provides Google API credentials)
+// Utility function to safely encode emails for Base64
+function safeBase64Encode(text: string): string {
+  return btoa(unescape(encodeURIComponent(text)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+/**
+ * Function to send email using Gmail API
+ */
+export const sendEmailWithGmailApi = async (
+  emailTemplate: EmailTemplate,
+  authToken: string
+): Promise<boolean> => {
+  if (!emailTemplate.to || emailTemplate.to.length === 0) {
+    throw new Error('No recipients specified');
+  }
+  
+  try {
+    // Format the email in RFC 5322 format
+    const emailContent = createRFC5322Email({
+      from: emailTemplate.to[0], // For Gmail API, this should be the user's email
+      to: emailTemplate.to.join(', '),
+      subject: emailTemplate.subject,
+      body: emailTemplate.body
+    });
+    
+    // Base64 encode the email
+    const base64EncodedEmail = safeBase64Encode(emailContent);
+    
+    // Send the email through Gmail API
+    const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        raw: base64EncodedEmail
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Gmail API error:', errorText);
+      throw new Error(`Failed to send email: ${response.statusText}`);
+    }
+    
+    console.log('Email sent successfully through Gmail API');
+    return true;
+  } catch (error) {
+    console.error('Error sending email with Gmail API:', error);
+    throw error;
+  }
+};
+
+// Gmail API implementation
 export interface GoogleAuthCredentials {
   clientId: string;
   apiKey: string;
@@ -98,23 +207,4 @@ export interface GoogleAccessToken {
   token_type: string;
   expires_in: number;
   scope: string;
-}
-
-/**
- * Function to send email using Gmail API
- * This will be fully implemented once the Google API credentials are provided
- */
-export const sendEmailWithGmailApi = async (
-  emailTemplate: EmailTemplate,
-  accessToken: GoogleAccessToken
-): Promise<boolean> => {
-  console.log('Would send email using Gmail API with token:', accessToken);
-  console.log('Email template:', emailTemplate);
-  
-  // In the real implementation, this would:
-  // 1. Convert the email template to RFC 5322 format
-  // 2. Base64 encode the email data
-  // 3. Call the Gmail API's users.messages.send endpoint
-  
-  return true;
-}; 
+} 
