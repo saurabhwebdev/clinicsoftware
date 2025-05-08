@@ -150,7 +150,7 @@ const EmailSettingsForm = () => {
       const expiresIn = tokenResponse.expires_in || 3600;
       const authToken: GoogleAuthToken = {
         token: tokenResponse.access_token,
-        expiresAt: Date.now() + (expiresIn * 1000) // Convert seconds to milliseconds
+        expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000) // Set to 7 days (1 week)
       };
       
       // Save to state and localStorage
@@ -228,7 +228,7 @@ const EmailSettingsForm = () => {
           const expiresIn = response.expires_in || 3600;
           const authToken: GoogleAuthToken = {
             token: response.access_token,
-            expiresAt: Date.now() + (expiresIn * 1000) // Convert seconds to milliseconds
+            expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000) // Set to 7 days (1 week)
           };
           
           // Save to state and localStorage
@@ -361,10 +361,21 @@ const EmailSettingsForm = () => {
     
     const expiresIn = Math.max(0, Math.floor((googleAuthToken.expiresAt - Date.now()) / 1000 / 60)); // minutes
     if (expiresIn < 1) return 'Expired';
-    if (expiresIn < 60) return `Expires in ${expiresIn} minute${expiresIn !== 1 ? 's' : ''}`;
     
-    const hours = Math.floor(expiresIn / 60);
-    return `Expires in ${hours} hour${hours !== 1 ? 's' : ''}`;
+    // Show days if more than 24 hours
+    if (expiresIn > 1440) { // more than 24 hours (1440 minutes)
+      const days = Math.floor(expiresIn / 1440); // days
+      return `Expires in ${days} day${days !== 1 ? 's' : ''}`;
+    }
+    
+    // Show hours if more than 60 minutes
+    if (expiresIn >= 60) {
+      const hours = Math.floor(expiresIn / 60);
+      return `Expires in ${hours} hour${hours !== 1 ? 's' : ''}`;
+    }
+    
+    // Show minutes if less than 60 minutes
+    return `Expires in ${expiresIn} minute${expiresIn !== 1 ? 's' : ''}`;
   };
   
   return (
@@ -651,7 +662,7 @@ const EmailSettingsForm = () => {
               
               {isGoogleAuthorized && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Your authorization will be remembered until it expires. You won't need to re-authorize for each email.
+                  Your authorization will be remembered for 7 days. You won't need to re-authorize during this period.
                 </p>
               )}
             </div>
