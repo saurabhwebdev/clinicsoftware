@@ -14,6 +14,7 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Settings from "./pages/Settings";
 import Patients from "./pages/Patients";
+import PatientDetails from "./pages/PatientDetails";
 import Appointments from "./pages/Appointments";
 import MedicalRecords from "./pages/MedicalRecords";
 import Prescriptions from "./pages/Prescriptions";
@@ -46,6 +47,7 @@ const App = () => (
                           <Route path="/" element={<Index />} />
                           <Route path="/appointments" element={<Appointments />} />
                           <Route path="/patients" element={<Patients />} />
+                          <Route path="/patients/:id" element={<PatientDetails />} />
                           <Route path="/records" element={<MedicalRecords />} />
                           <Route path="/prescriptions" element={<Prescriptions />} />
                           <Route path="/billing" element={<Billing />} />

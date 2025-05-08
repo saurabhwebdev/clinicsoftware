@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Bell, Search, User, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import SearchModal from './SearchModal';
 
 interface NavbarProps {
   onMenuClick?: () => void;
@@ -21,6 +22,7 @@ interface NavbarProps {
 const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
@@ -38,6 +40,10 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
       .substring(0, 2);
   };
 
+  const handleSearchClick = () => {
+    setSearchModalOpen(true);
+  };
+
   return (
     <header className="h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex items-center justify-between h-full px-4">
@@ -47,7 +53,9 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
             <Input 
               type="search" 
               placeholder="Search..." 
-              className="w-64 pl-8 bg-background" 
+              className="w-64 pl-8 bg-background cursor-pointer" 
+              onClick={handleSearchClick}
+              readOnly
             />
           </div>
         </div>
@@ -87,6 +95,11 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
           </DropdownMenu>
         </div>
       </div>
+      
+      <SearchModal 
+        open={searchModalOpen} 
+        onOpenChange={setSearchModalOpen} 
+      />
     </header>
   );
 };
