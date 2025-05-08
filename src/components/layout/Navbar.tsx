@@ -48,15 +48,12 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
     <header className="h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex items-center justify-between h-full px-4">
         <div className="flex items-center">          
-          <div className="relative">
-            <Search className="h-4 w-4 absolute left-2.5 text-muted-foreground" />
-            <Input 
-              type="search" 
-              placeholder="Search..." 
-              className="w-64 pl-8 bg-background cursor-pointer" 
-              onClick={handleSearchClick}
-              readOnly
-            />
+          <div 
+            className="flex items-center w-64 px-3 py-1.5 rounded-md border bg-background cursor-pointer hover:bg-accent/50 transition-colors"
+            onClick={handleSearchClick}
+          >
+            <Search className="h-4 w-4 text-muted-foreground mr-2 flex-shrink-0" />
+            <span className="text-sm text-muted-foreground">Search...</span>
           </div>
         </div>
         
