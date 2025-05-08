@@ -28,7 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Clipboard, PlusCircle, Search, Eye, FileEdit, MoreVertical, Trash, Download } from 'lucide-react';
+import { Clipboard, PlusCircle, Search, Eye, FileEdit, MoreVertical, Trash, Download, Mail } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/components/ui/use-toast';
 import { usePrescriptions, Prescription } from '@/lib/PrescriptionContext';
@@ -37,6 +37,20 @@ import NewPrescriptionModal from '@/components/prescriptions/NewPrescriptionModa
 import PrescriptionDetail from '@/components/prescriptions/PrescriptionDetail';
 import { generatePrescriptionPDF } from '@/lib/utils/pdf';
 import { useSettings } from '@/lib/SettingsContext';
+import { sendPrescriptionEmail } from '@/lib/services/emailService';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogDescription, 
+  DialogFooter, 
+  DialogHeader, 
+  DialogTitle 
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 const PrescriptionsContent = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,9 +58,25 @@ const PrescriptionsContent = () => {
   const [selectedPrescriptionId, setSelectedPrescriptionId] = useState<string | null>(null);
   const [isViewingPrescription, setIsViewingPrescription] = useState(false);
   const [prescriptionToDelete, setPrescriptionToDelete] = useState<string | null>(null);
+  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
+  const [prescriptionToEmail, setPrescriptionToEmail] = useState<Prescription | null>(null);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const { prescriptions, loading, removePrescription } = usePrescriptions();
   const { toast } = useToast();
   const { settings } = useSettings();
+
+  // Email form validation schema
+  const emailFormSchema = z.object({
+    recipientEmail: z.string().email('Please enter a valid email address')
+  });
+
+  // Form for email recipient
+  const emailForm = useForm<z.infer<typeof emailFormSchema>>({
+    resolver: zodResolver(emailFormSchema),
+    defaultValues: {
+      recipientEmail: ''
+    }
+  });
 
   // Filter prescriptions by search query
   const filteredPrescriptions = prescriptions.filter(prescription => 
@@ -113,6 +143,70 @@ const PrescriptionsContent = () => {
     }
   };
 
+  const handleEmailPrescription = (prescription: Prescription) => {
+    // First check if email is configured
+    if (!settings.email.enabled || !settings.email.username || !settings.email.googleClientId) {
+      toast({
+        title: "Email Not Configured",
+        description: "Please configure your email settings first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setPrescriptionToEmail(prescription);
+    setIsEmailDialogOpen(true);
+  };
+
+  const onSendEmail = async (data: z.infer<typeof emailFormSchema>) => {
+    if (!prescriptionToEmail) return;
+    
+    setIsSendingEmail(true);
+    
+    try {
+      // Get the auth token from localStorage
+      const storedToken = localStorage.getItem('googleAuthToken');
+      if (!storedToken) {
+        throw new Error('You need to authorize with Google in the Email Settings section first');
+      }
+      
+      const parsedToken = JSON.parse(storedToken);
+      
+      // Check if token is expired
+      if (parsedToken.expiresAt <= Date.now()) {
+        throw new Error('Your Google authorization has expired. Please reauthorize in Email Settings');
+      }
+      
+      await sendPrescriptionEmail({
+        settings: settings.email,
+        prescription: prescriptionToEmail,
+        recipientEmail: data.recipientEmail,
+        authToken: parsedToken.token,
+        clinicInfo: settings.clinic,
+        doctorInfo: settings.doctor
+      });
+      
+      toast({
+        title: "Success",
+        description: `Prescription sent to ${data.recipientEmail}`,
+      });
+      
+      // Close the dialog and reset form
+      setIsEmailDialogOpen(false);
+      emailForm.reset();
+      setPrescriptionToEmail(null);
+    } catch (error) {
+      console.error('Error sending prescription email:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to send prescription email",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
   const getStatusBadge = (status: Prescription['status']) => {
     switch (status) {
       case 'active':
@@ -127,63 +221,43 @@ const PrescriptionsContent = () => {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Prescriptions</h1>
-          <p className="text-muted-foreground">Manage patient prescriptions and medications</p>
-        </div>
-        <Button onClick={handleNewPrescription} className="flex items-center gap-2">
-          <PlusCircle className="h-4 w-4" />
-          <span>New Prescription</span>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold tracking-tight">Prescriptions</h2>
+        <Button onClick={handleNewPrescription}>
+          <PlusCircle className="h-4 w-4 mr-2" />
+          New Prescription
         </Button>
       </div>
-
-      <div className="space-y-4">
-        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search prescriptions..."
-              className="pl-8 w-full md:w-[300px]"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <div className="text-sm text-muted-foreground">
-            {filteredPrescriptions.length} prescription{filteredPrescriptions.length !== 1 ? 's' : ''} found
-          </div>
-        </div>
-
+      
+      <div className="mb-4">
+        <Input
+          type="text"
+          placeholder="Search by patient name or medication..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="max-w-sm"
+          prefix={<Search className="h-4 w-4 mr-2 opacity-50" />}
+        />
+      </div>
+      
+      <div className="rounded-md border">
         {loading ? (
-          <div className="flex justify-center items-center p-8">
-            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+          <div className="p-8 text-center">
+            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
+            <p className="mt-2 text-sm text-gray-500">Loading prescriptions...</p>
           </div>
         ) : filteredPrescriptions.length === 0 ? (
-          <div className="text-center p-8 border rounded-lg bg-card">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-muted">
-              <Clipboard className="h-10 w-10 text-muted-foreground" />
-            </div>
-            <h3 className="mt-4 text-lg font-semibold">No Prescriptions</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {prescriptions.length === 0 
-                ? "You haven't added any prescriptions yet."
-                : "No prescriptions match your search criteria."}
-            </p>
-            {prescriptions.length === 0 && (
-              <Button className="mt-4" onClick={handleNewPrescription}>
-                <PlusCircle className="h-4 w-4 mr-2" />
-                Add Your First Prescription
-              </Button>
-            )}
+          <div className="p-8 text-center">
+            <p className="text-sm text-gray-500">No prescriptions found</p>
           </div>
         ) : (
-          <div className="rounded-md border">
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Patient Name</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead>Patient</TableHead>
                   <TableHead>Medications</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -192,17 +266,16 @@ const PrescriptionsContent = () => {
               <TableBody>
                 {filteredPrescriptions.map((prescription) => (
                   <TableRow key={prescription.id}>
-                    <TableCell className="font-medium">{prescription.patientName}</TableCell>
-                    <TableCell>{format(new Date(prescription.date), 'MMM d, yyyy')}</TableCell>
+                    <TableCell>{prescription.date}</TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {prescription.medications.length > 0 ? (
-                          <Badge variant="secondary" className="text-xs">
-                            {prescription.medications.length} medication{prescription.medications.length !== 1 ? 's' : ''}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">None</span>
-                        )}
+                      <div>
+                        <div className="font-medium">{prescription.patientName}</div>
+                        <div className="text-sm text-gray-500">ID: {prescription.patientId}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="max-w-[300px] truncate">
+                        {prescription.medications.map(med => med.name).join(', ')}
                       </div>
                     </TableCell>
                     <TableCell>{getStatusBadge(prescription.status)}</TableCell>
@@ -222,6 +295,10 @@ const PrescriptionsContent = () => {
                             <Download className="h-4 w-4 mr-2" />
                             Export as PDF
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleEmailPrescription(prescription)}>
+                            <Mail className="h-4 w-4 mr-2" />
+                            Send as Email
+                          </DropdownMenuItem>
                           <DropdownMenuItem 
                             className="text-destructive focus:text-destructive" 
                             onClick={() => setPrescriptionToDelete(prescription.id || '')}
@@ -240,7 +317,7 @@ const PrescriptionsContent = () => {
         )}
       </div>
 
-      {isViewingPrescription && selectedPrescriptionId && (
+      {selectedPrescriptionId && (
         <AlertDialog open={isViewingPrescription} onOpenChange={setIsViewingPrescription}>
           <AlertDialogContent className="sm:max-w-[700px] max-h-[85vh] p-6 overflow-hidden">
             <PrescriptionDetail 
@@ -276,18 +353,65 @@ const PrescriptionsContent = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Email Prescription Dialog */}
+      <Dialog open={isEmailDialogOpen} onOpenChange={(open) => {
+        setIsEmailDialogOpen(open);
+        if (!open) {
+          setPrescriptionToEmail(null);
+          emailForm.reset();
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Prescription via Email</DialogTitle>
+            <DialogDescription>
+              Enter the recipient's email address to send the prescription.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...emailForm}>
+            <form onSubmit={emailForm.handleSubmit(onSendEmail)} className="space-y-4">
+              <FormField
+                control={emailForm.control}
+                name="recipientEmail"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Recipient Email</FormLabel>
+                    <FormControl>
+                      <Input placeholder="patient@example.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setIsEmailDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSendingEmail}>
+                  {isSendingEmail ? "Sending..." : "Send Prescription"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
-const Prescriptions = () => {
+const PrescriptionsPage = () => {
   return (
-    <PrescriptionProvider>
-      <MainLayout>
-        <PrescriptionsContent />
-      </MainLayout>
-    </PrescriptionProvider>
+    <MainLayout>
+      <div className="container mx-auto py-6">
+        <PrescriptionProvider>
+          <PrescriptionsContent />
+        </PrescriptionProvider>
+      </div>
+    </MainLayout>
   );
 };
 
-export default Prescriptions; 
+export default PrescriptionsPage; 
