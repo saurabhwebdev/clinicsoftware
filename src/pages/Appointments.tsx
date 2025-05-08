@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PlusCircle, Search, Eye, FileEdit, MoreVertical, Trash, Calendar, Clock } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useToast } from '@/components/ui/use-toast';
@@ -30,7 +31,7 @@ const Appointments = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isNewAppointmentModalOpen, setIsNewAppointmentModalOpen] = useState(false);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
-  const [isViewingAppointment, setIsViewingAppointment] = useState(false);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [appointmentToDelete, setAppointmentToDelete] = useState<string | null>(null);
   const { appointments, loading, removeAppointment, updateAppointmentStatus } = useAppointments();
   const { toast } = useToast();
@@ -55,12 +56,12 @@ const Appointments = () => {
 
   const handleViewAppointment = (id: string) => {
     setSelectedAppointmentId(id);
-    setIsViewingAppointment(true);
+    setIsDetailsModalOpen(true);
   };
 
-  const handleCloseAppointmentDetail = () => {
+  const handleCloseDetailsModal = () => {
+    setIsDetailsModalOpen(false);
     setSelectedAppointmentId(null);
-    setIsViewingAppointment(false);
   };
 
   const handleDeleteAppointment = async () => {
@@ -239,12 +240,19 @@ const Appointments = () => {
       />
 
       {/* Appointment Details Modal */}
-      {selectedAppointmentId && isViewingAppointment && (
-        <AppointmentDetails 
-          appointmentId={selectedAppointmentId} 
-          onClose={handleCloseAppointmentDetail}
-        />
-      )}
+      <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Appointment Details</DialogTitle>
+          </DialogHeader>
+          {selectedAppointmentId && (
+            <AppointmentDetails 
+              appointmentId={selectedAppointmentId} 
+              onClose={handleCloseDetailsModal}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!appointmentToDelete} onOpenChange={(open) => !open && setAppointmentToDelete(null)}>
