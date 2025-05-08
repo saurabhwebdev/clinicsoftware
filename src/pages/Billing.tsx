@@ -235,7 +235,8 @@ const BillingContent = () => {
           bill: billToEmail,
           recipientEmail: email,
           authToken: parsedToken.token,
-          clinicInfo: settings.clinic
+          clinicInfo: settings.clinic,
+          currencySettings: settings.location
         })
       );
       

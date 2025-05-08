@@ -39,6 +39,9 @@ interface SendBillEmailParams {
     phone: string;
     email: string;
   };
+  currencySettings?: {
+    currency: string;
+  };
 }
 
 /**
@@ -406,7 +409,8 @@ export const createBillEmailTemplate = (
   recipientEmail: string,
   bill: Bill,
   settings: EmailSettings,
-  clinicInfo: { name: string; address: string; phone: string; email: string }
+  clinicInfo: { name: string; address: string; phone: string; email: string },
+  currencySettings?: { currency: string }
 ): EmailTemplate => {
   // Format date properly
   const formatDate = (dateStr: string) => {
@@ -422,7 +426,7 @@ export const createBillEmailTemplate = (
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
-      currency: 'USD'  // Could be dynamic based on settings
+      currency: currencySettings?.currency || 'USD'  // Use currency from settings if available
     }).format(amount);
   };
 
@@ -522,7 +526,8 @@ export const sendBillEmail = async ({
   bill,
   recipientEmail,
   authToken,
-  clinicInfo
+  clinicInfo,
+  currencySettings
 }: SendBillEmailParams): Promise<boolean> => {
   // Validate required settings
   if (!settings.enabled || !settings.username) {
@@ -542,7 +547,8 @@ export const sendBillEmail = async ({
       recipientEmail,
       bill,
       settings,
-      clinicInfo
+      clinicInfo,
+      currencySettings
     );
     
     // Convert template to RFC 5322 format
