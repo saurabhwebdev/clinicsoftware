@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -47,10 +47,19 @@ import {
   DialogTitle 
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+
+// Email form validation schema
+const emailFormSchema = z.object({
+  recipientEmail: z.string().email('Please enter a valid email address'),
+  additionalEmails: z.string().optional()
+});
+
+// Form submission type
+type EmailFormValues = z.infer<typeof emailFormSchema>;
 
 const PrescriptionsContent = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,18 +74,35 @@ const PrescriptionsContent = () => {
   const { toast } = useToast();
   const { settings } = useSettings();
 
-  // Email form validation schema
-  const emailFormSchema = z.object({
-    recipientEmail: z.string().email('Please enter a valid email address')
-  });
-
   // Form for email recipient
-  const emailForm = useForm<z.infer<typeof emailFormSchema>>({
+  const emailForm = useForm<EmailFormValues>({
     resolver: zodResolver(emailFormSchema),
     defaultValues: {
-      recipientEmail: ''
+      recipientEmail: '',
+      additionalEmails: ''
     }
   });
+
+  // Reset form with patient email when prescription to email changes
+  useEffect(() => {
+    if (prescriptionToEmail) {
+      // Try to find patient email from patientId
+      const patientEmail = getPatientEmail(prescriptionToEmail.patientId);
+      emailForm.reset({
+        recipientEmail: patientEmail || '', 
+        additionalEmails: ''
+      });
+    }
+  }, [prescriptionToEmail, emailForm]);
+
+  // Mock function to get patient email - in a real app, this would fetch from patient records
+  const getPatientEmail = (patientId: string): string => {
+    // This is a mock function. In a real application, you would:
+    // 1. Fetch the patient record using the patientId
+    // 2. Return the patient's email from their record
+    // For now, we'll construct a mock email using the patientId
+    return `patient${patientId}@example.com`;
+  };
 
   // Filter prescriptions by search query
   const filteredPrescriptions = prescriptions.filter(prescription => 
@@ -158,7 +184,7 @@ const PrescriptionsContent = () => {
     setIsEmailDialogOpen(true);
   };
 
-  const onSendEmail = async (data: z.infer<typeof emailFormSchema>) => {
+  const onSendEmail = async (data: EmailFormValues) => {
     if (!prescriptionToEmail) return;
     
     setIsSendingEmail(true);
@@ -177,18 +203,36 @@ const PrescriptionsContent = () => {
         throw new Error('Your Google authorization has expired. Please reauthorize in Email Settings');
       }
       
-      await sendPrescriptionEmail({
-        settings: settings.email,
-        prescription: prescriptionToEmail,
-        recipientEmail: data.recipientEmail,
-        authToken: parsedToken.token,
-        clinicInfo: settings.clinic,
-        doctorInfo: settings.doctor
-      });
+      // Process additional emails
+      const emails = [data.recipientEmail];
+      
+      if (data.additionalEmails) {
+        // Split by comma and trim whitespace
+        const additionalEmailsList = data.additionalEmails
+          .split(',')
+          .map(email => email.trim())
+          .filter(email => email && email.includes('@')); // Basic validation
+          
+        emails.push(...additionalEmailsList);
+      }
+      
+      // Send to each recipient
+      const emailPromises = emails.map(email => 
+        sendPrescriptionEmail({
+          settings: settings.email,
+          prescription: prescriptionToEmail,
+          recipientEmail: email,
+          authToken: parsedToken.token,
+          clinicInfo: settings.clinic,
+          doctorInfo: settings.doctor
+        })
+      );
+      
+      await Promise.all(emailPromises);
       
       toast({
         title: "Success",
-        description: `Prescription sent to ${data.recipientEmail}`,
+        description: `Prescription sent to ${emails.length > 1 ? 'multiple recipients' : data.recipientEmail}`,
       });
       
       // Close the dialog and reset form
@@ -231,14 +275,16 @@ const PrescriptionsContent = () => {
       </div>
       
       <div className="mb-4">
-        <Input
-          type="text"
-          placeholder="Search by patient name or medication..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="max-w-sm"
-          prefix={<Search className="h-4 w-4 mr-2 opacity-50" />}
-        />
+        <div className="relative max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search by patient name or medication..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8"
+          />
+        </div>
       </div>
       
       <div className="rounded-md border">
@@ -366,7 +412,7 @@ const PrescriptionsContent = () => {
           <DialogHeader>
             <DialogTitle>Send Prescription via Email</DialogTitle>
             <DialogDescription>
-              Enter the recipient's email address to send the prescription.
+              The patient's email is pre-filled. You can modify it or add additional recipients.
             </DialogDescription>
           </DialogHeader>
           
@@ -377,10 +423,27 @@ const PrescriptionsContent = () => {
                 name="recipientEmail"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Recipient Email</FormLabel>
+                    <FormLabel>Patient Email</FormLabel>
                     <FormControl>
                       <Input placeholder="patient@example.com" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={emailForm.control}
+                name="additionalEmails"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Additional Recipients (comma-separated)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="email1@example.com, email2@example.com" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Add any additional email addresses separated by commas
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
