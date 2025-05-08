@@ -38,6 +38,7 @@ import PrescriptionDetail from '@/components/prescriptions/PrescriptionDetail';
 import { generatePrescriptionPDF } from '@/lib/utils/pdf';
 import { useSettings } from '@/lib/SettingsContext';
 import { sendPrescriptionEmail } from '@/lib/services/emailService';
+import { usePatients } from '@/lib/PatientContext';
 import { 
   Dialog, 
   DialogContent, 
@@ -71,6 +72,7 @@ const PrescriptionsContent = () => {
   const [prescriptionToEmail, setPrescriptionToEmail] = useState<Prescription | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const { prescriptions, loading, removePrescription } = usePrescriptions();
+  const { patients } = usePatients();
   const { toast } = useToast();
   const { settings } = useSettings();
 
@@ -93,15 +95,20 @@ const PrescriptionsContent = () => {
         additionalEmails: ''
       });
     }
-  }, [prescriptionToEmail, emailForm]);
+  }, [prescriptionToEmail, emailForm, patients]);
 
-  // Mock function to get patient email - in a real app, this would fetch from patient records
+  // Function to get patient email from patient collection
   const getPatientEmail = (patientId: string): string => {
-    // This is a mock function. In a real application, you would:
-    // 1. Fetch the patient record using the patientId
-    // 2. Return the patient's email from their record
-    // For now, we'll construct a mock email using the patientId
-    return `patient${patientId}@example.com`;
+    // Find the patient with the matching ID in the patients array
+    const patient = patients.find(p => p.id === patientId);
+    
+    // If the patient is found, return their email
+    if (patient && patient.email) {
+      return patient.email;
+    }
+    
+    // If patient not found or no email, return empty string
+    return '';
   };
 
   // Filter prescriptions by search query
