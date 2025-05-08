@@ -6,11 +6,18 @@ import { Prescription } from '../PrescriptionContext';
 import PrescriptionPrintTemplate from '@/components/prescriptions/PrescriptionPrintTemplate';
 import { Bill } from '../BillingContext';
 
+export interface PDFResult {
+  base64: string;
+  filename: string;
+}
+
 /**
  * Generate a PDF from the prescription data
  * 
  * @param prescription Prescription data
  * @param settings Clinic and doctor settings
+ * @param returnPdf Whether to return the PDF data instead of saving
+ * @returns If returnPdf is true, returns base64 data and filename, otherwise void
  */
 export const generatePrescriptionPDF = async (
   prescription: Prescription,
@@ -25,8 +32,9 @@ export const generatePrescriptionPDF = async (
       name: string;
       specialization: string;
     };
-  }
-): Promise<void> => {
+  },
+  returnPdf: boolean = false
+): Promise<PDFResult | void> => {
   try {
     // Create a container for the template
     const container = document.createElement('div');
@@ -94,7 +102,16 @@ export const generatePrescriptionPDF = async (
     const dateStr = new Date().toISOString().split('T')[0];
     const filename = `prescription_${patientName}_${dateStr}.pdf`;
 
-    // Save the PDF
+    // If returnPdf is true, return the PDF data as base64
+    if (returnPdf) {
+      const pdfData = pdf.output('datauristring');
+      return {
+        base64: pdfData.split(',')[1], // Remove the data URI prefix
+        filename: filename
+      };
+    }
+    
+    // Otherwise, save the PDF
     pdf.save(filename);
   } catch (error) {
     console.error('Error generating PDF:', error);
@@ -107,6 +124,8 @@ export const generatePrescriptionPDF = async (
  * 
  * @param bill Bill data
  * @param settings Clinic settings
+ * @param returnPdf Whether to return the PDF data instead of saving
+ * @returns If returnPdf is true, returns base64 data and filename, otherwise void
  */
 export const generateBillPDF = async (
   bill: Bill,
@@ -128,8 +147,9 @@ export const generateBillPDF = async (
       timezone: string;
       language: string;
     };
-  }
-): Promise<void> => {
+  },
+  returnPdf: boolean = false
+): Promise<PDFResult | void> => {
   try {
     // Create a container for the bill template
     const container = document.createElement('div');
@@ -292,7 +312,16 @@ export const generateBillPDF = async (
     const patientName = bill.patientName.replace(/\s+/g, '_');
     const filename = `invoice_${bill.invoiceNumber}_${patientName}.pdf`;
 
-    // Save the PDF
+    // If returnPdf is true, return the PDF data as base64
+    if (returnPdf) {
+      const pdfData = pdf.output('datauristring');
+      return {
+        base64: pdfData.split(',')[1], // Remove the data URI prefix
+        filename: filename
+      };
+    }
+    
+    // Otherwise, save the PDF
     pdf.save(filename);
   } catch (error) {
     console.error('Error generating bill PDF:', error);
